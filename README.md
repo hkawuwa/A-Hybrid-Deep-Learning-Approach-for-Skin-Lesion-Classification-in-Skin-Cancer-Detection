@@ -1,6 +1,3 @@
-# A-Hybrid-Deep-Learning-Approach-for-Skin-Lesion-Classification-in-Skin-Cancer-Detection
-A hybrid computer vision pipeline for multi-class skin lesion diagnosis (ISIC 2019) using DullRazor hair-removal artifact preprocessing, dual EfficientNet (B4 &amp; B5) deep feature fusion, and an RBF-kernel SVM classifier.
-
 # A Hybrid EfficientNet and Support Vector Machine Approach for Skin Lesion Classification
 
 This repository contains a hybrid machine learning pipeline designed for multi-class skin lesion classification using the ISIC 2019 Dataset. The project implements custom artifact pre-processing, data re-balancing, deep feature extraction and fusion from dual Convolutional Neural Networks (EfficientNet B4 and B5), and a downstream Support Vector Machine (SVM) classifier to optimize final diagnostics.
