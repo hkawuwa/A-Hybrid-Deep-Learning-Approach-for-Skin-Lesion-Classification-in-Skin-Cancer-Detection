@@ -1,80 +1,88 @@
 # A Hybrid EfficientNet and Support Vector Machine Approach for Skin Lesion Classification
 
-This repository contains a hybrid machine learning pipeline designed for multi-class skin lesion classification using the ISIC 2019 Dataset. The project implements custom artifact pre-processing, data re-balancing, deep feature extraction and fusion from dual Convolutional Neural Networks (EfficientNet B4 and B5), and a downstream Support Vector Machine (SVM) classifier to optimize final diagnostics.
+Code for the manuscript *"A Hybrid EfficientNet and Support Vector Machine Approach for Skin Lesion Classification in Skin Cancer Detection"* (Satpute, Sani, Kawuwa and Ibrahim), submitted to *Discover Computing*.
 
----
+The pipeline classifies dermoscopic images from the ISIC 2019 dataset into eight lesion classes. Hair artifacts are removed with DullRazor, EfficientNet-B4 and EfficientNet-B5 are fine-tuned, and their pooled features are concatenated and classified by a Support Vector Machine (SVM) with an RBF kernel.
 
-## Key Features
+## Repository contents
 
-* **Data Balancing and Structuring:** Addresses class imbalance via structured sequential under-sampling and over-sampling using the imbalanced-learn library, resulting in a balanced training dataset with 625 images per class.
-* **DullRazor Pre-processing:** Automated hair artifact isolation and Telea-based image inpainting using OpenCV morphology to remove distracting visual structures from dermatological images.
-* **Deep Feature Fusion:** Dual-model feature extraction utilizing fine-tuned EfficientNet-B4 and EfficientNet-B5 models. Top classification heads are removed to allow multi-model deep feature concatenation.
-* **Downstream SVM Classifier:** Employs a Radial Basis Function (RBF) kernel SVM optimized with class weighting to map high-dimensional feature vectors into 8 clinical target spaces.
+| File | Description |
+| --- | --- |
+| `skin_lesion_classification_revised.ipynb` | **Revised pipeline used for the revised manuscript (current version).** Leakage-free lesion-level evaluation, ablations, baselines and statistical tests. |
+| `skin_lesion_classification.ipynb` | Original notebook from the first submission, kept unchanged for transparency. Its results are superseded (see below). |
 
----
+## What changed in the revised version
 
-## Dataset and Classes
+The revision follows the reviewer's comments. The main corrections are:
 
-The model classifies skin lesions across 8 target classes from the ISIC 2019 challenge:
-1. AK - Actinic keratosis
-2. BCC - Basal cell carcinoma
-3. BKL - Benign keratosis (solar lentigines / seborrheic keratoses)
-4. DF - Dermatofibroma
-5. MEL - Melanoma
-6. NV - Melanocytic nevus
-7. SCC - Squamous cell carcinoma
-8. VASC - Vascular lesions
+- **No data leakage.** The original notebook balanced the data *before* splitting it, so over-sampled copies of minority-class images (DF, VASC) appeared in both the training and the test set. The revised notebook splits the data first, at lesion level, and balances the training split only.
+- **Realistic test set.** The validation and test sets keep the natural ISIC 2019 class distribution instead of an artificially balanced 500-image test set.
+- **Corrected metrics.** In the original notebook, the ROC curves of EfficientNet-B4 and B5 were computed after the classification heads had been replaced for feature extraction, so they did not reflect class probabilities. In the revised notebook, features are extracted from a separate copy of each model, and all metrics are computed from class probabilities.
+- **Additional experiments.** DullRazor on/off ablation, three class-balancing strategies, five classifiers on the same features, four additional baselines, bootstrap confidence intervals, McNemar tests, calibration, inference cost and Grad-CAM.
 
----
+## Dataset
 
-## Pipeline Architecture
+[ISIC 2019 Skin Lesion Images for Classification](https://www.kaggle.com/datasets/salviohexia/isic-2019-skin-lesion-images-for-classification) (25,331 dermoscopic images, 8 classes; the UNK class is excluded):
 
-1. **Setup and Verification:** Mounts Google Drive, sets recursive directory parsing, and installs dependencies including timm, medpy, and torchmetrics.
-2. **Phase I (Data Overhaul):** Filters out unknown data classes, handles balanced random resampling, and executes a stratified 80/10/10 split (Train: 3999, Val: 501, Test: 500).
-3. **Phase II (Pre-processing):** Converts inputs to grayscale, applies a Black-Hat morphological kernel operation to isolate hair shafts, builds binary masks, and inpaints the original RGB array.
-4. **Phase III (Deep Training and Extraction):** Trains PyTorch backbones using Mixed Precision Autocasting and plateau-driven learning rate schedulers. Extracts raw feature arrays via nn.Identity().
-5. **Phase IV (Evaluation):** Trains the RBF SVM and generates performance summaries, confusion matrices, and multi-class One-vs-Rest (OvR) ROC-AUC curves.
+AK (actinic keratosis), BCC (basal cell carcinoma), BKL (benign keratosis), DF (dermatofibroma), MEL (melanoma), NV (melanocytic nevus), SCC (squamous cell carcinoma), VASC (vascular lesion).
 
----
+## Revised pipeline
 
-## Experimental Results
+1. **Lesion-level split.** A stratified group split (`StratifiedGroupKFold`, seed 42) uses the `lesion_id` field of the ISIC 2019 metadata, so all images of a lesion fall into one subset. Images without a `lesion_id` form their own group (13,931 groups in total). Result: 20,197 training, 2,629 validation and 2,505 test images; validation and test keep the natural class distribution.
+2. **DullRazor hair removal** on the original 8-bit image at native resolution (black-hat filter with a 17 × 17 kernel, Otsu threshold, Telea inpainting), followed by resizing to a 456 × 456 cache. A second cache without hair removal is used for the ablation.
+3. **Training-set balancing only.** Main strategy: random under/over-sampling of the training split to 625 images per class. Alternatives: all training images with class-weighted cross-entropy, or with class-weighted focal loss (γ = 2). Every strategy uses 5,000 training images per epoch.
+4. **Backbone fine-tuning** with `timm` (PyTorch) and ImageNet weights at native input size: EfficientNet-B4 (380 × 380), EfficientNet-B5 (456 × 456); baselines ResNet50, DenseNet121, ConvNeXt-T and Swin-T (224 × 224). AdamW (learning rate 5 × 10⁻⁵, weight decay 10⁻⁴), ReduceLROnPlateau, mixed precision, at most 30 epochs with early stopping on validation balanced accuracy. Augmentation (horizontal flip, rotation up to 30°) is applied to training images only.
+5. **Two-stage hybrid classifier.** The fine-tuned B4 and B5 backbones are frozen; their global-average-pooled features (1,792 + 2,048 = 3,840 dimensions) are concatenated, standardised with statistics of the training features, and classified by an RBF-kernel SVM with Platt-scaled probabilities. The SVM and the comparison classifiers (linear SVM, logistic regression, random forest, XGBoost) are tuned on validation balanced accuracy.
+6. **Evaluation** on the untouched test set: accuracy, balanced accuracy, macro-F1, macro one-vs-rest ROC-AUC, per-class sensitivity and specificity, expected calibration error, bootstrap 95% confidence intervals (1,000 resamples) and exact McNemar tests.
 
-The hybrid pipeline delivers an evaluation performance jump over standalone neural architectures:
+## Results (revised notebook, test set of 2,505 images)
 
+| Model | Training data / loss | Accuracy | Balanced accuracy | Macro-F1 | Macro AUC |
+| --- | --- | --- | --- | --- | --- |
+| EfficientNet-B4 | Resampled | 0.6391 | 0.5145 | 0.4527 | 0.8962 |
+| EfficientNet-B5 | Resampled | 0.6770 | 0.5542 | 0.5029 | 0.8991 |
+| **Hybrid B4+B5 + SVM-RBF** | Resampled | **0.7066** | **0.5699** | **0.5422** | **0.9135** |
+| EfficientNet-B5 | All images, weighted CE | 0.7238 | 0.6143 | 0.5629 | 0.9339 |
+| EfficientNet-B5 | All images, focal loss | 0.7062 | 0.6330 | 0.5206 | 0.9241 |
+| Swin-T | Resampled | 0.6387 | 0.5925 | 0.5008 | 0.9112 |
 
-| Model Config | Training Accuracy | Testing Accuracy |
-| :--- | :---: | :---: |
-| EfficientNet B4 Baseline | 91.80% | 67.20% |
-| EfficientNet B5 Baseline | 93.15% | 70.00% |
-| EfficientNet + SVM (Hybrid Pipeline) | 100.00% | 77.00% |
+The full table (DullRazor ablation, all classifiers and baselines) is produced in section 8 of the notebook and reported as Table 6 of the revised manuscript.
 
-### Performance Analysis
-* **Feature Synergy:** Combining EfficientNet feature variants into a single normalized array provided the SVM with robust, multi-scale visual details, resulting in a +7.00% testing boost over baseline networks.
-* **Class Performance:** The system displays high diagnostic reliability on VASC (1.00 recall) and DF classes (0.98 precision). Highly similar visual phenotypes like Melanoma (MEL) and Melanocytic Nevi (NV) remain primary candidates for ongoing boundary optimization.
+**Main findings:**
 
----
+- The hybrid model is significantly more accurate than its EfficientNet-B5 backbone (McNemar p = 3.3 × 10⁻⁵); its balanced accuracy is 0.5699 (95% CI 0.5244–0.6170).
+- Other classifiers on the same fused features perform almost identically, so the gain comes mainly from feature fusion rather than from the RBF-SVM itself.
+- Training on all images with a class-weighted or focal loss is more effective than random resampling; EfficientNet-B5 with focal loss reaches the highest balanced accuracy (0.6330).
+- DullRazor hair removal gives no measurable benefit.
+- Melanoma sensitivity of the hybrid model is 0.6688; melanoma and nevus remain the most confused pair of classes.
 
-## Requirements and Installation
+**Limitations:** results come from a single training seed (42) and a single lesion-level split, and no external dataset was used for validation.
 
-Install the required environment frameworks via pip:
+> The original notebook reported 77% test accuracy for the hybrid model. That value was obtained with the data leakage described above and is not valid; please use the revised notebook.
 
-```bash
-pip install torch torchvision timm torchmetrics medpy pandas numpy scikit-learn seaborn matplotlib opencv-python tqdm imbalanced-learn
-```
+## Reproducing the results
 
----
+The revised notebook is written for **Kaggle**:
 
-## Code Usage
+1. Create a Kaggle notebook and import `skin_lesion_classification_revised.ipynb`.
+2. Settings: **Accelerator = GPU T4**, **Internet = On** (timm downloads the ImageNet weights).
+3. Add the dataset `salviohexia/isic-2019-skin-lesion-images-for-classification` as input.
+4. Run all cells. Training runs, features and predictions are cached in `/kaggle/working`, so an interrupted session can be resumed by re-running the cells.
 
-Run the cells inside the notebook file to execute the pipeline end-to-end:
+Main dependencies (pre-installed on Kaggle): `torch`, `torchvision`, `timm`, `scikit-learn`, `xgboost`, `opencv-python`, `numpy`, `pandas`, `scipy`, `matplotlib`, `seaborn`, `pillow`, `tqdm`, `joblib`.
 
-```python
-# Configure components or train backbones manually
-from models import timm
-model = timm.create_model("efficientnet_b4", pretrained=True, num_classes=8)
+## Splits, seeds and settings
 
-# Strip classification head for structural hybridization
-import torch.nn as nn
-model.classifier = nn.Identity()
-model.eval()
-```
+Section 12 of the notebook writes the following files to `/kaggle/working/splits/`:
+
+| File | Content |
+| --- | --- |
+| `train_natural.csv`, `val.csv`, `test.csv` | Image IDs, labels and lesion groups of the lesion-level split |
+| `train_resampled_seed42.csv` | Resampled training rows (625 per class) |
+| `settings.json` | Split seed, training seeds, sampling settings and the selected classifier hyperparameters |
+
+These files are included in the `splits/` folder of this repository.
+
+## Citation
+
+If you use this code, please cite the manuscript (citation details will be added after publication).
